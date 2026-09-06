@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email Safety</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="brand">Email Safety</div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light and dark mode">
+        <span id="themeLabel">Dark</span>
+      </button>
+    </header>
+
+    <main class="page-center">
+      <section class="upload-card">
+        <div class="upload-heading">
+          <h1>Analyze an email</h1>
+        </div>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input id="fileInput" name="file" type="file" accept=".eml,message/rfc822" hidden>
+            <strong id="dropTitle">Drop .eml file here</strong>
+            <span id="dropText">or choose a file</span>
+          </label>
+
+          <div class="selected-file" id="fileRow" hidden>
+            <div>
+              <div class="file-name" id="fileName"></div>
+              <div class="file-size" id="fileSize"></div>
+            </div>
+            <button type="button" class="text-button" id="clearBtn">Remove</button>
+          </div>
+
+          <button class="primary-button" id="analyzeBtn" type="submit" disabled>
+            <span id="btnText">Analyze</span>
+            <span class="spinner" id="spinner" hidden></span>
+          </button>
+        </form>
+
+        <div class="status" id="status" hidden>
+          <span class="status-dot"></span>
+          <span id="statusText"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script>
+const form = document.getElementById('uploadForm');
+const input = document.getElementById('fileInput');
+const dropzone = document.getElementById('dropzone');
+const fileRow = document.getElementById('fileRow');
+const fileName = document.getElementById('fileName');
+const fileSize = document.getElementById('fileSize');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const btnText = document.getElementById('btnText');
+const spinner = document.getElementById('spinner');
+const status = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const themeToggle = document.getElementById('themeToggle');
+const themeLabel = document.getElementById('themeLabel');
+
+function humanSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function setStatus(text, kind='normal') {
+  status.hidden = false;
+  statusText.textContent = text;
+  status.dataset.kind = kind;
+}
+
+function updateFile() {
+  const file = input.files[0];
+  if (!file) {
+    fileRow.hidden = true;
+    analyzeBtn.disabled = true;
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith('.eml')) {
+    input.value = '';
+    fileRow.hidden = true;
+    analyzeBtn.disabled = true;
+    setStatus('Please select a .eml file.', 'error');
+    return;
+  }
+  fileName.textContent = file.name;
+  fileSize.textContent = humanSize(file.size);
+  fileRow.hidden = false;
+  analyzeBtn.disabled = false;
+  setStatus('Ready to analyze');
+}
+
+input.addEventListener('change', updateFile);
+
+clearBtn.addEventListener('click', () => {
+  input.value = '';
+  updateFile();
+  status.hidden = true;
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+  dropzone.addEventListener(eventName, event => {
+    event.preventDefault();
+    dropzone.classList.add('dragging');
+  });
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+  dropzone.addEventListener(eventName, event => {
+    event.preventDefault();
+    dropzone.classList.remove('dragging');
+  });
+});
+
+dropzone.addEventListener('drop', event => {
+  if (event.dataTransfer.files.length) {
+    input.files = event.dataTransfer.files;
+    updateFile();
+  }
+});
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
+  localStorage.setItem('emailSafetyTheme', theme);
+}
+
+const savedTheme = localStorage.getItem('emailSafetyTheme');
+applyTheme(savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+
+themeToggle.addEventListener('click', () => {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const file = input.files[0];
+  if (!file) return;
+
+  analyzeBtn.disabled = true;
+  spinner.hidden = false;
+  btnText.textContent = 'Analyzing';
+  setStatus('Analyzing email...');
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/analyze', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || data.detail || 'Analysis failed.');
+    }
+
+    window.location.href = `/report/${data.report_id}`;
+  } catch (error) {
+    setStatus(error.message || 'Analysis failed.', 'error');
+  } finally {
+    analyzeBtn.disabled = false;
+    spinner.hidden = true;
+    btnText.textContent = 'Analyze';
+  }
+});
+</script>
+</body>
+</html>
