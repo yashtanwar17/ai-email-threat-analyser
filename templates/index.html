@@ -38,9 +38,21 @@
 
           <button class="primary-button" id="analyzeBtn" type="submit" disabled>
             <span id="btnText">Analyze</span>
-            <span class="spinner" id="spinner" hidden></span>
           </button>
         </form>
+
+        <button class="eml-help-trigger" id="emlHelpTrigger" type="button" aria-expanded="false" aria-controls="emlHelpPanel">
+          <span class="eml-help-icon">?</span>
+          <span>How do I download an .eml file?</span>
+          <span class="eml-help-chevron" aria-hidden="true">⌄</span>
+        </button>
+
+        <div class="eml-help-panel" id="emlHelpPanel" hidden>
+          <div class="eml-help-image-wrap">
+            <img src="{{ url_for('static', filename='images/eml-download-help.png') }}" alt="How to download an email as an EML file">
+          </div>
+          <p>Follow the steps in the image to download the email as an <strong>.eml</strong> file, then upload it above.</p>
+        </div>
 
         <div class="status" id="status" hidden>
           <span class="status-dot"></span>
@@ -60,7 +72,6 @@ const fileSize = document.getElementById('fileSize');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const clearBtn = document.getElementById('clearBtn');
 const btnText = document.getElementById('btnText');
-const spinner = document.getElementById('spinner');
 const status = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const themeToggle = document.getElementById('themeToggle');
@@ -141,14 +152,23 @@ themeToggle.addEventListener('click', () => {
   applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 });
 
+const emlHelpTrigger = document.getElementById('emlHelpTrigger');
+const emlHelpPanel = document.getElementById('emlHelpPanel');
+
+emlHelpTrigger.addEventListener('click', () => {
+  const isOpen = !emlHelpPanel.hidden;
+  emlHelpPanel.hidden = isOpen;
+  emlHelpTrigger.setAttribute('aria-expanded', String(!isOpen));
+  emlHelpTrigger.classList.toggle('open', !isOpen);
+});
+
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const file = input.files[0];
   if (!file) return;
 
   analyzeBtn.disabled = true;
-  spinner.hidden = false;
-  btnText.textContent = 'Analyzing';
+  btnText.textContent = 'Analyzing…';
   setStatus('Analyzing email...');
 
   try {
@@ -170,7 +190,6 @@ form.addEventListener('submit', async event => {
     setStatus(error.message || 'Analysis failed.', 'error');
   } finally {
     analyzeBtn.disabled = false;
-    spinner.hidden = true;
     btnText.textContent = 'Analyze';
   }
 });
