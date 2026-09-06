@@ -219,22 +219,6 @@ a {
   cursor: not-allowed;
 }
 
-.spinner {
-  display: inline-block;
-  width: 13px;
-  height: 13px;
-  margin-left: 6px;
-  vertical-align: -2px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .status {
   display: flex;
   align-items: center;
@@ -687,3 +671,19 @@ a {
     padding: 16px;
   }
 }
+
+
+/* EML download help */
+.eml-help-trigger { width:100%; margin-top:12px; padding:11px 13px; display:flex; align-items:center; gap:9px; border:1px solid var(--border); border-radius:10px; background:transparent; color:var(--muted); cursor:pointer; text-align:left; font-size:12px; transition:background .2s ease,border-color .2s ease,color .2s ease; }
+.eml-help-trigger:hover,.eml-help-trigger.open { background:var(--surface-soft); color:var(--text); border-color:var(--accent); }
+.eml-help-icon { width:20px; height:20px; flex:0 0 auto; display:inline-grid; place-items:center; border:1px solid currentColor; border-radius:50%; font-size:12px; font-weight:700; }
+.eml-help-trigger > span:nth-child(2) { flex:1; }
+.eml-help-chevron { font-size:16px; line-height:1; transition:transform .25s ease; }
+.eml-help-trigger.open .eml-help-chevron { transform:rotate(180deg); }
+.eml-help-panel { margin-top:10px; padding:12px; overflow:hidden; border:1px solid var(--border); border-radius:12px; background:var(--surface-soft); animation:emlHelpSlide .28s ease both; }
+.eml-help-image-wrap { overflow:hidden; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
+.eml-help-image-wrap img { display:block; width:100%; height:auto; max-height:430px; object-fit:contain; }
+.eml-help-panel p { margin:10px 2px 1px; color:var(--muted); font-size:12px; line-height:1.5; }
+.eml-help-panel[hidden] { display:none; }
+@keyframes emlHelpSlide { from { opacity:0; transform:translateY(-8px); max-height:0; } to { opacity:1; transform:translateY(0); max-height:520px; } }
+@media (max-width:700px) { .eml-help-image-wrap img { max-height:320px; } }
