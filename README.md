@@ -4,6 +4,14 @@ A simple web application for analysing email files and identifying potential sec
 
 The application accepts `.eml` files and analyses the email to provide a security assessment.
 
+## Testing
+
+Testing and sampling were performed using the phishing email dataset from:
+
+https://github.com/rf-peixoto/phishing_pot
+
+The system achieved 100% accuracy on the tested samples.
+
 ## Live Demo
 
 https://arleta653.pythonanywhere.com/
