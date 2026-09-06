@@ -1,4 +1,4 @@
-# AI Email Threat Analyser
+# AI Email Threat Analyser (Prototype)
 
 A simple web application for analysing email files and identifying potential security threats.
 
