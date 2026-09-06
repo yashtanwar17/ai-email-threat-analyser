@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email Report</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="brand">Email Safety</div>
+      <div class="header-actions">
+        <button class="theme-toggle" id="themeToggle" type="button"><span id="themeLabel">Dark</span></button>
+        <a class="secondary-button" href="/">New analysis</a>
+      </div>
+    </header>
+
+    <main class="report-page" id="reportPage">
+      <section class="report-section">
+        <div class="section-label">SAFETY VERDICT</div>
+        <div class="verdict-layout">
+          <div class="verdict-score" id="scoreValue">—</div>
+          <div class="verdict-copy">
+            <div class="verdict-badge" id="verdictLabel">UNKNOWN</div>
+            <h1 id="verdictHeadline">Analysis complete</h1>
+            <p id="executiveSummary">—</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="report-section">
+        <div class="section-label">EMAIL SUMMARY</div>
+        <div class="summary-grid" id="emailSummary"></div>
+      </section>
+
+      <button class="more-button" id="moreButton" type="button" aria-expanded="false">
+        <span>More</span>
+        <span class="more-chevron">+</span>
+      </button>
+
+      <section class="more-panel" id="morePanel" hidden>
+        <div class="more-panel-head">
+          <div>
+            <div class="section-label">GEMINI ANALYSIS</div>
+            <h2 id="geminiTitle">Detailed analysis</h2>
+          </div>
+        </div>
+        <div class="analysis-list" id="analysisList"></div>
+
+        <section class="geo-section" id="geoSection" hidden>
+          <div class="section-label">GEOLOCATION</div>
+          <div class="geo-card">
+            <div class="geo-header">
+              <div>
+                <h2>Infrastructure locations</h2>
+                <p id="geoMeta">—</p>
+              </div>
+              <span class="geo-count" id="geoCount">0</span>
+            </div>
+            <div id="geoMap" class="geo-map" aria-label="IP geolocation map"></div>
+            <div class="geo-legend" id="geoLegend"></div>
+          </div>
+        </section>
+
+        <div class="more-actions">
+          <button class="secondary-button" id="downloadBtn" type="button">Export JSON</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script>
+const reportId = {{ report_id|tojson }};
+const moreButton = document.getElementById('moreButton');
+const morePanel = document.getElementById('morePanel');
+const themeToggle = document.getElementById('themeToggle');
+const themeLabel = document.getElementById('themeLabel');
+let lastPayload = null;
+
+function esc(value) {
+  const div = document.createElement('div');
+  div.textContent = value ?? '';
+  return div.innerHTML;
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
+  localStorage.setItem('emailSafetyTheme', theme);
+}
+
+applyTheme(localStorage.getItem('emailSafetyTheme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+
+themeToggle.addEventListener('click', () => {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+
+function verdictClass(verdict) {
+  if (verdict === 'SAFE') return 'safe';
+  if (verdict === 'SUSPICIOUS') return 'suspicious';
+  if (verdict === 'MALICIOUS') return 'malicious';
+  return 'unknown';
+}
+
+function renderSummary(report) {
+  const h = report?.evidence?.headers || {};
+  const i = report?.evidence?.iocs || {};
+  const attachments = report?.evidence?.attachments || [];
+
+  const rows = [
+    ['From', h.from || '—'],
+    ['To', h.to || '—'],
+    ['Subject', h.subject || '—'],
+    ['Reply-To', h.reply_to || '—'],
+    ['Date', h.date || '—']
+  ];
+
+  document.getElementById('emailSummary').innerHTML =
+    rows.map(([label, value]) => `
+      <div class="summary-row">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+      </div>
+    `).join('') +
+    `<div class="summary-stats">
+      <div><strong>${(i.urls || []).length}</strong><span>Links</span></div>
+      <div><strong>${(i.domains || []).length}</strong><span>Domains</span></div>
+      <div><strong>${(i.ipv4 || []).length}</strong><span>IP addresses</span></div>
+      <div><strong>${attachments.length}</strong><span>Attachments</span></div>
+    </div>`;
+}
+
+function renderGemini(ai) {
+  const fields = [
+    ['what_email_is_doing', 'What the email is doing'],
+    ['threat_assessment', 'Threat assessment'],
+    ['sender_analysis', 'Sender analysis'],
+    ['authentication_analysis', 'Authentication'],
+    ['infrastructure_analysis', 'Infrastructure'],
+    ['url_analysis', 'Link analysis'],
+    ['attachment_analysis', 'Attachment analysis'],
+    ['social_engineering_analysis', 'Social engineering'],
+    ['timeline_and_headers', 'Header timeline']
+  ];
+
+  document.getElementById('geminiTitle').textContent = ai?.model ? `${ai.model} analysis` : 'Detailed analysis';
+
+  document.getElementById('analysisList').innerHTML = fields.map(([key, title]) => {
+    const value = ai?.[key];
+    if (!value) return '';
+    return `
+      <article class="analysis-row">
+        <h3>${esc(title)}</h3>
+        <p>${esc(value)}</p>
+      </article>
+    `;
+  }).join('') || '<div class="empty-state">No detailed Gemini analysis is available.</div>';
+}
+
+
+let geoMap = null;
+let geoPoints = [];
+let googleMapsPromise = null;
+const googleMapsApiKey = {{ google_maps_api_key|tojson }};
+
+function collectCoordinates(node, results = [], context = {}) {
+  if (!node || typeof node !== 'object') return results;
+
+  if (Array.isArray(node)) {
+    node.forEach(item => collectCoordinates(item, results, context));
+    return results;
+  }
+
+  const coords = node.coordinates;
+  if (coords && typeof coords === 'object') {
+    const lat = Number(coords.latitude ?? coords.lat);
+    const lng = Number(coords.longitude ?? coords.lng ?? coords.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      results.push({
+        latitude: lat,
+        longitude: lng,
+        ip: node.ip || node.target || context.ip || context.target || null,
+        location: node.location || context.location || {},
+      });
+    }
+  }
+
+  const nextContext = { ...context };
+  if (node.ip) nextContext.ip = node.ip;
+  if (node.target) nextContext.target = node.target;
+  if (node.location && typeof node.location === 'object') nextContext.location = node.location;
+
+  Object.entries(node).forEach(([key, value]) => {
+    if (key === 'coordinates') return;
+    collectCoordinates(value, results, nextContext);
+  });
+
+  return results;
+}
+
+function dedupeCoordinates(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = [item.ip || '', item.latitude, item.longitude, JSON.stringify(item.location || {})].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function loadGoogleMaps() {
+  if (window.google?.maps) return Promise.resolve();
+  if (googleMapsPromise) return googleMapsPromise;
+
+  googleMapsPromise = new Promise((resolve, reject) => {
+    const callbackName = '__emailSafetyGoogleMapsReady';
+    window[callbackName] = () => {
+      delete window[callbackName];
+      resolve();
+    };
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&callback=${callbackName}&loading=async`;
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => {
+      delete window[callbackName];
+      googleMapsPromise = null;
+      reject(new Error('Google Maps could not be loaded.'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return googleMapsPromise;
+}
+
+async function initGeoMap() {
+  if (!geoPoints.length) return;
+
+  try {
+    await loadGoogleMaps();
+  } catch (error) {
+    document.getElementById('geoMap').innerHTML = `<div class="map-error">${esc(error.message || 'Map unavailable.')}</div>`;
+    return;
+  }
+
+  const mapElement = document.getElementById('geoMap');
+  if (!mapElement) return;
+
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const mapOptions = {
+    center: { lat: geoPoints[0].latitude, lng: geoPoints[0].longitude },
+    zoom: geoPoints.length === 1 ? 8 : 2,
+    minZoom: 1,
+    gestureHandling: 'greedy',
+    streetViewControl: false,
+    mapTypeControl: false,
+    fullscreenControl: false,
+    clickableIcons: false,
+    backgroundColor: isDark ? '#16191d' : '#f3f5f7',
+    styles: isDark ? [
+      { elementType: 'geometry', stylers: [{ color: '#24282d' }] },
+      { elementType: 'labels.text.fill', stylers: [{ color: '#aeb6c1' }] },
+      { elementType: 'labels.text.stroke', stylers: [{ color: '#24282d' }] },
+      { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#3b424b' }] },
+      { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#202429' }] },
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#333940' }] },
+      { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#15181c' }] }
+    ] : [
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+      { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+    ]
+  };
+
+  if (geoMap) {
+    geoMap = null;
+    mapElement.innerHTML = '';
+  }
+
+  geoMap = new google.maps.Map(mapElement, mapOptions);
+  const bounds = new google.maps.LatLngBounds();
+  const infoWindow = new google.maps.InfoWindow();
+
+  geoPoints.forEach((point, index) => {
+    const loc = point.location || {};
+    const cityLine = [loc.city, loc.province, loc.country].filter(Boolean).join(', ');
+    const title = point.ip || `Location ${index + 1}`;
+    const position = { lat: point.latitude, lng: point.longitude };
+
+    const marker = new google.maps.Marker({
+      position,
+      map: geoMap,
+      title,
+      label: { text: String(index + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' }
+    });
+
+    marker.addListener('click', () => {
+      infoWindow.setContent(`
+        <div class="map-popup">
+          <strong>${esc(title)}</strong>
+          ${cityLine ? `<span>${esc(cityLine)}</span>` : ''}
+          <span>${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}</span>
+        </div>
+      `);
+      infoWindow.open({ map: geoMap, anchor: marker });
+    });
+
+    bounds.extend(position);
+  });
+
+  if (geoPoints.length > 1) {
+    geoMap.fitBounds(bounds, { top: 24, right: 24, bottom: 24, left: 24 });
+    google.maps.event.addListenerOnce(geoMap, 'bounds_changed', () => {
+      if (geoMap.getZoom() > 10) geoMap.setZoom(10);
+    });
+  } else {
+    geoMap.setCenter(bounds.getCenter());
+  }
+}
+
+function renderGeoMap(payload) {
+  const geoSection = document.getElementById('geoSection');
+  geoPoints = dedupeCoordinates(collectCoordinates(payload));
+  if (!geoPoints.length) {
+    geoSection.hidden = true;
+    return;
+  }
+
+  geoSection.hidden = false;
+  document.getElementById('geoCount').textContent = String(geoPoints.length);
+  document.getElementById('geoMeta').textContent = `${geoPoints.length} location${geoPoints.length === 1 ? '' : 's'} found in the report`;
+
+  const legend = document.getElementById('geoLegend');
+  legend.innerHTML = '';
+
+  geoPoints.forEach((point, index) => {
+    const loc = point.location || {};
+    const cityLine = [loc.city, loc.province, loc.country].filter(Boolean).join(', ');
+    const label = point.ip || `Location ${index + 1}`;
+    const legendItem = document.createElement('div');
+    legendItem.className = 'geo-legend-item';
+    legendItem.innerHTML = `<span class="geo-number">${index + 1}</span><span><strong>${esc(label)}</strong>${cityLine ? `<small>${esc(cityLine)}</small>` : ''}</span>`;
+    legend.appendChild(legendItem);
+  });
+
+  const mapElement = document.getElementById('geoMap');
+  mapElement.innerHTML = '<div class="map-loading">Loading map…</div>';
+}
+
+async function loadReport() {
+  try {
+    const response = await fetch(`/report-data/${reportId}`, { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Report unavailable.');
+
+    lastPayload = data;
+
+    const ai = data.ai_analysis || {
+      verdict: 'UNKNOWN',
+      score: 0,
+      executive_summary: data.ai_error || 'Analysis unavailable.'
+    };
+
+    const verdict = ai.verdict || 'UNKNOWN';
+    const verdictTone = verdictClass(verdict);
+    document.getElementById('scoreValue').textContent =
+      `${Number(ai.score || 0).toFixed(1)} / 10`;
+
+    const label = document.getElementById('verdictLabel');
+    label.textContent = verdict;
+    label.className = `verdict-badge ${verdictTone}`;
+
+    document.getElementById('verdictHeadline').textContent =
+      verdict === 'SAFE' ? 'Safe to trust' :
+      verdict === 'SUSPICIOUS' ? 'Suspicious email' :
+      verdict === 'MALICIOUS' ? 'Malicious email' :
+      'Insufficient evidence';
+
+    document.getElementById('executiveSummary').textContent =
+      ai.executive_summary || 'No summary available.';
+
+    renderSummary(data.report);
+    renderGemini(ai);
+    renderGeoMap(data.report);
+  } catch (error) {
+    document.getElementById('executiveSummary').textContent = error.message || 'Unable to load report.';
+  }
+}
+
+moreButton.addEventListener('click', () => {
+  const opening = morePanel.hidden;
+  morePanel.hidden = !opening;
+  moreButton.setAttribute('aria-expanded', String(opening));
+  moreButton.querySelector('span:first-child').textContent = opening ? 'Less' : 'More';
+  moreButton.querySelector('.more-chevron').textContent = opening ? '−' : '+';
+  if (opening && geoPoints.length) {
+    initGeoMap();
+  }
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!lastPayload?.report) return;
+  const blob = new Blob([JSON.stringify(lastPayload.report, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'email-report.json';
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+loadReport();
+</script>
+</body>
+</html>
