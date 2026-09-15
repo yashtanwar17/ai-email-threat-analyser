@@ -2,6 +2,8 @@
 
 A simple web application for analysing email files and identifying potential security threats.
 
+Chrome extension can be used for shorter and faster analysis.
+
 The application accepts `.eml` files and analyses the email to provide a security assessment.
 
 ## Testing
