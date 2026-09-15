@@ -25,6 +25,7 @@ https://arleta653.pythonanywhere.com/
 - Simple and clean web interface
 - Light and dark mode
 - Detailed analysis report
+- Directly fetchs from mail via chrome extension (NEW)
 
 ## Tech Stack
 
@@ -46,3 +47,12 @@ ai-email-threat-analyser/
 ├── static/
 ├── templates/
 └── README.md
+```
+
+```text
+chrome-extension/
+├── content.js
+├── manifest.json
+├── popup.html
+└── popup.js
+```
